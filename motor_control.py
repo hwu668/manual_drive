@@ -28,16 +28,60 @@ class MotorControl:
         self.duty_forward = config.MOTOR_DUTY_FORWARD
         self.duty_turn = config.MOTOR_DUTY_TURN
 
-    def setup(self) -> bool:
+        # Mode state
+        self.mode = "auto"
+        self.hardware_available = _HAS_MOTOR
+        self.mock_active = False
+        self.initialization_errors: list[str] = []
+
+    def setup(self, mode: str = "auto") -> bool:
+        """Initialize motor hardware. Mode: 'auto', 'mock', or 'hardware'.
+
+        Returns True if setup succeeded, False otherwise.
+        In 'hardware' mode, returns False on any failure.
+        In 'auto' mode, falls back to mock on failure.
+        In 'mock' mode, forces mock unconditionally.
+        """
+        self.mode = mode
+        self.initialization_errors = []
+
+        if mode == "mock":
+            self.mock_active = True
+            logger.info("Motor: MOCK mode active (forced)")
+            return True
+
+        if mode == "hardware":
+            if not _HAS_MOTOR:
+                msg = "Freenove Motor library not available"
+                self.initialization_errors.append(msg)
+                logger.error("Motor: %s", msg)
+                return False
+            try:
+                self._motor = _FreenoveMotor()
+                self.mock_active = False
+                logger.info("Motor: hardware mode active (PCA9685)")
+                return True
+            except Exception as e:
+                msg = f"Motor hardware init failed: {e}"
+                self.initialization_errors.append(msg)
+                logger.error("Motor: %s", msg)
+                return False
+
+        # mode == "auto"
         if _HAS_MOTOR:
             try:
                 self._motor = _FreenoveMotor()
-                logger.info("Motor module initialized (PCA9685)")
+                self.mock_active = False
+                logger.info("Motor: auto mode → hardware (PCA9685)")
                 return True
             except Exception as e:
-                logger.error("Motor init failed: %s", e)
-                return False
-        logger.info("Motor module in MOCK mode (no Freenove library)")
+                logger.warning(
+                    "Motor: auto mode hardware init failed (%s), falling back to mock", e
+                )
+                self.initialization_errors.append(f"Hardware init failed: {e}")
+
+        self.mock_active = True
+        logger.info("Motor: auto mode → mock (no Freenove library)")
         return True
 
     def forward(self, duty: int = None):

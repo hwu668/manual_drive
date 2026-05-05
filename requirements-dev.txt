@@ -1,0 +1,6 @@
+# manual_drive — Development dependencies
+# Install: pip install -r requirements-dev.txt
+# These are NOT required for runtime; only for linting, formatting, and testing.
+
+pytest>=8.0.0
+ruff>=0.5.0

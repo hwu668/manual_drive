@@ -69,8 +69,15 @@ TURN_DEG_PER_SEC = 90.0        # estimated turn rate at MOTOR_DUTY_TURN
 # ============================================================================
 # Control
 # ============================================================================
-AUTO_STOP_FRAMES = 5           # stop after N frames with no movement key
-MAIN_LOOP_DELAY = 0.05         # ~20 FPS control loop
+AUTO_STOP_FRAMES = 5              # stop after N frames with no movement key
+AUTO_STOP_TIMEOUT_SEC = 0.4       # time-based auto-stop (replaces frame count)
+MAIN_LOOP_DELAY = 0.05            # ~20 FPS control loop
+
+# ============================================================================
+# Safety
+# ============================================================================
+SAFE_STOP_DISTANCE_CM = 15.0      # emergency stop when obstacle closer than this
+MAX_RUNTIME_SEC = 0               # max runtime in seconds (0 = unlimited)
 
 # ============================================================================
 # Display

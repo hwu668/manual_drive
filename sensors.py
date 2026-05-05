@@ -36,26 +36,73 @@ class Sensors:
         }
         self._setup_done = False
 
-    def setup(self) -> bool:
-        """Initialize GPIO pins. Returns True on success or mock."""
-        if not _HAS_GPIO:
-            logger.info("Sensors in MOCK mode (no RPi.GPIO)")
+        # Mode state
+        self.mode = "auto"
+        self.hardware_available = _HAS_GPIO
+        self.mock_active = False
+        self.initialization_errors: list[str] = []
+
+    def setup(self, mode: str = "auto") -> bool:
+        """Initialize GPIO pins. Mode: 'auto', 'mock', or 'hardware'.
+
+        Returns True on success (or mock fallback), False on hardware failure
+        when mode='hardware'.
+        """
+        self.mode = mode
+        self.initialization_errors = []
+
+        if mode == "mock":
+            self.mock_active = True
+            self._setup_done = False
+            logger.info("Sensors: MOCK mode active (forced)")
             return True
 
-        try:
-            GPIO.setmode(GPIO.BCM)
-            # Ultrasonic
-            GPIO.setup(self._trig, GPIO.OUT)
-            GPIO.setup(self._echo, GPIO.IN)
-            # IR sensors (digital input with pull-up)
-            for pin in self._ir_pins.values():
-                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            self._setup_done = True
-            logger.info("Sensors initialized (HC-SR04 + 3× IR)")
-            return True
-        except Exception as e:
-            logger.error("Sensor GPIO setup failed: %s", e)
-            return False
+        if mode == "hardware":
+            if not _HAS_GPIO:
+                msg = "RPi.GPIO not available"
+                self.initialization_errors.append(msg)
+                logger.error("Sensors: %s", msg)
+                return False
+            try:
+                self._init_gpio()
+                self.mock_active = False
+                self._setup_done = True
+                logger.info("Sensors: hardware mode active (HC-SR04 + 3× IR)")
+                return True
+            except Exception as e:
+                msg = f"Sensor GPIO setup failed: {e}"
+                self.initialization_errors.append(msg)
+                logger.error("Sensors: %s", msg)
+                return False
+
+        # mode == "auto"
+        if _HAS_GPIO:
+            try:
+                self._init_gpio()
+                self.mock_active = False
+                self._setup_done = True
+                logger.info("Sensors: auto mode → hardware (HC-SR04 + 3× IR)")
+                return True
+            except Exception as e:
+                logger.warning(
+                    "Sensors: auto mode hardware init failed (%s), falling back to mock", e
+                )
+                self.initialization_errors.append(f"Hardware init failed: {e}")
+
+        self.mock_active = True
+        self._setup_done = False
+        logger.info("Sensors: auto mode → mock (no RPi.GPIO)")
+        return True
+
+    def _init_gpio(self):
+        """Set up GPIO pins. Raises on failure."""
+        GPIO.setmode(GPIO.BCM)
+        # Ultrasonic
+        GPIO.setup(self._trig, GPIO.OUT)
+        GPIO.setup(self._echo, GPIO.IN)
+        # IR sensors (digital input with pull-up)
+        for pin in self._ir_pins.values():
+            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # ========================================================================
     # Ultrasonic
@@ -63,7 +110,7 @@ class Sensors:
 
     def get_distance_cm(self) -> float:
         """Return distance in cm, -1 on failure, 999 in mock mode."""
-        if not _HAS_GPIO or not self._setup_done:
+        if self.mock_active or not self._setup_done:
             return 999.0
 
         try:
@@ -114,7 +161,7 @@ class Sensors:
         }
 
     def _read_ir(self, name: str) -> bool:
-        if not _HAS_GPIO or not self._setup_done:
+        if self.mock_active or not self._setup_done:
             return False
         try:
             # LOW = dark / edge (IR beam reflected or interrupted)

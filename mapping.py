@@ -5,8 +5,8 @@ Estimates pose from motor commands × elapsed time (no wheel encoders).
 Builds a top-down grid map from ultrasonic and infrared sensor data.
 """
 
-import math
 import logging
+import math
 
 import cv2
 import numpy as np
