@@ -1,5 +1,7 @@
 # Manual Drive — Freenove FNK0043B 手动驾驶 + 实时建图
 
+**Co-Contributors:** [hwu668](https://github.com/hwu668) · [DeepSeek](https://github.com/deepseek)
+
 [中文](#中文) | [English](#english)
 
 ---
@@ -81,11 +83,6 @@ manual_drive/
 └── .gitignore
 ```
 
-### 贡献者
-
-- [hwu668](https://github.com/hwu668) — 项目作者
-- [DeepSeek](https://github.com/deepseek) <deepseek@deepseek.com> — 协同开发
-
 ---
 
 ## English
@@ -165,7 +162,4 @@ manual_drive/
 └── .gitignore
 ```
 
-### Contributors
 
-- [hwu668](https://github.com/hwu668) — Author
-- [DeepSeek](https://github.com/deepseek) <deepseek@deepseek.com> — Co-contributor
