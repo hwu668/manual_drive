@@ -25,6 +25,7 @@ from mapping import Mapping
 from motor_control import MotorControl
 from sensors import Sensors
 from terminal_keyboard import TerminalKeyboard
+from visual_odometry import VisualOdometry
 
 logger = logging.getLogger("manual_drive")
 
@@ -36,7 +37,8 @@ class ManualDrive:
                  use_terminal_kb: bool = False,
                  command: str = None, duration: float = None,
                  no_camera: bool = False, require_camera: bool = False,
-                 duty: int = None, max_runtime: float = None):
+                 duty: int = None, max_runtime: float = None,
+                 use_vo: bool = False, vo_no_dead_reckoning: bool = False):
         self.no_display = no_display
         self.mode = mode
         self._use_terminal_kb = use_terminal_kb
@@ -45,6 +47,8 @@ class ManualDrive:
         self._no_camera = no_camera
         self._require_camera = require_camera
         self._max_runtime = max_runtime
+        self._use_vo = use_vo
+        self._vo_no_dr = vo_no_dead_reckoning
 
         # Apply duty override if provided
         if duty is not None:
@@ -62,6 +66,16 @@ class ManualDrive:
         self.sensors = Sensors(config)
         self.mapping = Mapping(config)
         self._terminal_kb = None
+
+        # Visual odometry (optional)
+        self.vo: VisualOdometry | None = None
+        if self._use_vo:
+            self.vo = VisualOdometry(config)
+            logger.info("Visual odometry enabled")
+            if self._vo_no_dr:
+                logger.info("VO mode: replacing dead reckoning")
+            else:
+                logger.info("VO mode: augmenting dead reckoning")
 
         self._running = False
         self._command = "stop"
@@ -212,7 +226,36 @@ class ManualDrive:
                     break
 
             # 6. Update mapping
-            self.mapping.update_pose(self._command, dt)
+            # 6a. Visual odometry (if enabled)
+            if self.vo is not None and frame is not None:
+                vo_result = self.vo.process_frame(frame)
+                if vo_result["confidence"] >= config.VO_CONFIDENCE_THRESHOLD:
+                    # VO-based pose update
+                    self.mapping.update_pose_vo(
+                        vo_result["dx_cm"],
+                        vo_result["dz_cm"],
+                        vo_result["dyaw_deg"],
+                    )
+                    # Scale calibration from ultrasonic when moving forward
+                    if (self._command == "forward"
+                            and 0 < distance_cm < config.ULTRASONIC_MAX_DISTANCE_CM):
+                        self.vo.calibrate_scale(
+                            self.mapping.forward_speed * dt
+                        )
+                    if self._vo_no_dr:
+                        # Skip dead-reckoning pose update below
+                        pass
+                    else:
+                        # Augment: also apply dead reckoning
+                        self.mapping.update_pose(self._command, dt)
+                else:
+                    # Low confidence — fall back to dead reckoning
+                    self.mapping.update_pose(self._command, dt)
+            else:
+                # No VO — pure dead reckoning
+                self.mapping.update_pose(self._command, dt)
+
+            # 6b. Sensor fusion into occupancy grid
             self.mapping.update_map(distance_cm, ir_data)
 
             # 7. Display + input
@@ -380,8 +423,15 @@ class ManualDrive:
 
         # Text lines
         ir_str = f"IR L:{int(ir_data['left'])} M:{int(ir_data['middle'])} R:{int(ir_data['right'])}"
+        vo_str = ""
+        if self.vo is not None:
+            vo_str = (f"  VO:{self.vo.last_confidence:.2f}"
+                      f" in:{self.vo.last_num_inliers}"
+                      f" dZ:{self.vo.last_dz_cm:+.1f}"
+                      f" Y:{self.vo.last_dyaw_deg:+.1f}°"
+                      f" s:{self.vo.scale:.2f}")
         lines = [
-            f"Cmd: {self._command:10s}  Dist: {distance_cm:5.1f} cm  FPS: {self._fps_current:4.1f}",
+            f"Cmd: {self._command:10s}  Dist: {distance_cm:5.1f} cm  FPS: {self._fps_current:4.1f}{vo_str}",
             ir_str,
             "[W]fwd [S]back [A]left [D]right [SPACE]stop [R]eset [Q]uit",
         ]
@@ -434,6 +484,10 @@ Examples:
                         help="Override motor duty cycle (0-4096)")
     parser.add_argument("--max-runtime", type=float, default=None,
                         help="Maximum runtime in seconds before auto-stop and exit")
+    parser.add_argument("--vo", action="store_true",
+                        help="Enable visual odometry (ORB feature-based motion estimate)")
+    parser.add_argument("--vo-no-dead-reckoning", action="store_true",
+                        help="Replace dead reckoning with VO (default: augment)")
     return parser.parse_args()
 
 
@@ -485,5 +539,7 @@ if __name__ == "__main__":
         require_camera=args.require_camera,
         duty=args.duty,
         max_runtime=args.max_runtime,
+        use_vo=args.vo,
+        vo_no_dead_reckoning=args.vo_no_dead_reckoning,
     )
     drive.start()

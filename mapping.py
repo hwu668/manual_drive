@@ -72,6 +72,29 @@ class Mapping:
         # Normalize heading to [0, 2π)
         self.heading %= 2 * math.pi
 
+    def update_pose_vo(self, dx_cm: float, dz_cm: float, dyaw_deg: float) -> None:
+        """Update pose from visual-odometry ground-plane deltas.
+
+        Parameters
+        ----------
+        dx_cm : float
+            Lateral displacement in camera frame (right +), cm.
+        dz_cm : float
+            Forward displacement in camera frame (forward +), cm.
+        dyaw_deg : float
+            Yaw rotation in degrees (positive = left turn, negative = right).
+        """
+        heading = self.heading
+        dyaw_rad = math.radians(dyaw_deg)
+
+        # Project camera-frame deltas into world frame
+        self.x_cm += dz_cm * math.cos(heading) - dx_cm * math.sin(heading)
+        self.y_cm += -dz_cm * math.sin(heading) - dx_cm * math.cos(heading)
+
+        # Positive dyaw = left turn = heading increases
+        self.heading += dyaw_rad
+        self.heading %= 2 * math.pi
+
     # ========================================================================
     # Map update
     # ========================================================================

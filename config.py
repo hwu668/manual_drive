@@ -80,6 +80,19 @@ SAFE_STOP_DISTANCE_CM = 15.0      # emergency stop when obstacle closer than thi
 MAX_RUNTIME_SEC = 0               # max runtime in seconds (0 = unlimited)
 
 # ============================================================================
+# Visual Odometry (ORB-based monocular)
+# ============================================================================
+VO_FX = 530.0                 # camera focal length X (pixels) at 640×480
+VO_FY = 530.0                 # camera focal length Y (pixels)
+VO_CX = 320.0                 # principal point X
+VO_CY = 240.0                 # principal point Y
+VO_ORB_FEATURES = 1000        # max ORB features per frame
+VO_MIN_MATCHES = 30           # minimum inliers for valid motion estimate
+VO_FRAME_SKIP = 0             # process every N+1 frames (0 = every frame)
+VO_SCALE = 1.0                # initial translation scale (cm per unit vector)
+VO_CONFIDENCE_THRESHOLD = 0.4 # minimum inlier ratio to accept pose
+
+# ============================================================================
 # Display
 # ============================================================================
 WINDOW_CAMERA = "Manual Drive — Camera"

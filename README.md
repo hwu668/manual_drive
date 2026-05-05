@@ -25,6 +25,7 @@
 - 键盘 WASD 控制小车前进/后退/左转/右转
 - HC-SR04 超声波 + 3 路红外传感器融合进栅格地图
 - 航位推算 (dead-reckoning) 实时估计小车位姿
+- **视觉里程计 (ORB 特征)** — 可选，利用摄像头图像估计帧间运动（`--vo`）
 - 双窗口显示：摄像头画面 + 俯视栅格地图
 - 松开按键超过指定时间后自动停车
 - 支持无头模式、终端键盘控制、命令式控制
@@ -86,6 +87,12 @@ python main.py --mode mock --command stop
 # 低速安全测试
 python main.py --mode hardware --duty 1200 --max-runtime 30
 
+# 视觉里程计（VO + 航位推算并行）
+python main.py --vo
+
+# 纯视觉里程计（替换航位推算）
+python main.py --vo --vo-no-dead-reckoning
+
 # 详细日志
 python main.py --log-level DEBUG
 ```
@@ -131,6 +138,8 @@ python main.py --mode hardware --no-display --keyboard-terminal
 --require-camera             摄像头失败则退出
 --duty 0-4096                覆盖电机 duty 值
 --max-runtime SECONDS        最大运行时间后自动退出
+--vo                         启用视觉里程计 (ORB 特征匹配)
+--vo-no-dead-reckoning       纯 VO 模式 (替换航位推算)
 --log-level DEBUG|INFO|...   日志级别
 ```
 
@@ -158,6 +167,7 @@ manual_drive/
 ├── sensors.py             # HC-SR04 超声波 + 3 通道红外
 ├── camera.py              # PiCamera2 / USB 摄像头管理
 ├── mapping.py             # 航位推算 + 2D 占据栅格地图
+├── visual_odometry.py     # 视觉里程计 (ORB 特征匹配)
 ├── terminal_keyboard.py   # 终端键盘输入 (SSH 无头控制)
 ├── requirements.txt       # 跨平台运行时依赖
 ├── requirements-rpi.txt   # 树莓派硬件依赖
@@ -165,6 +175,48 @@ manual_drive/
 ├── pyproject.toml         # Ruff 配置
 └── tests/                 # 测试
 ```
+
+### 视觉里程计 (Visual Odometry)
+
+基于 ORB 特征的单目视觉里程计，从连续摄像头帧中估计小车运动。
+
+**工作原理**
+1. 对前后两帧图像提取 ORB 特征点（默认最多 1000 个）
+2. 使用 Hamming 距离进行暴力匹配
+3. 通过 `findEssentialMat` + `recoverPose` 估计 R, t
+4. t 为方向向量（无尺度），通过 `calibrate_scale()` 校准为实际距离
+5. 将相机坐标系下的运动转换到世界坐标系，更新地图位姿
+
+**置信度与回退**
+- 当 RANSAC 内点比例低于 `VO_CONFIDENCE_THRESHOLD`（默认 0.4）时，自动回退到航位推算
+- 纯 VO 模式（`--vo-no-dead-reckoning`）：低置信度帧不更新位姿
+
+**尺度校准**
+- 初始尺度 `VO_SCALE = 1.0`
+- 前进时使用航位推算速度估算距离，自动校准尺度
+- 也可调用 `vo.calibrate_scale(actual_cm)` 使用外部测量值
+
+**HUD 显示**
+摄像头窗口底部 VO 状态行：
+```
+VO:0.85 in:200 dZ:+2.3 Y:-1.2° s:1.52
+```
+- `VO:0.85` — 置信度 (0–1)
+- `in:200` — 内点数
+- `dZ:+2.3` — 前向位移 (cm)
+- `Y:-1.2°` — 偏航角变化 (度)
+- `s:1.52` — 当前尺度
+
+**可调参数（config.py）**
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `VO_FX` / `VO_FY` | 530 | 相机焦距 (pixels, 640×480) |
+| `VO_CX` / `VO_CY` | 320 / 240 | 主点坐标 |
+| `VO_ORB_FEATURES` | 1000 | 每帧最多提取的 ORB 特征数 |
+| `VO_MIN_MATCHES` | 30 | 最少匹配内点数（低于此值忽略该帧） |
+| `VO_FRAME_SKIP` | 0 | 跳帧数（0 = 每帧都处理） |
+| `VO_SCALE` | 1.0 | 初始尺度 (cm / unit vector) |
+| `VO_CONFIDENCE_THRESHOLD` | 0.4 | 最小置信度阈值 |
 
 ### 已验证环境
 
@@ -220,6 +272,7 @@ A keyboard-controlled driving system for **Raspberry Pi 5 + Freenove FNK0043B (4
 - WASD keyboard control: forward, backward, turn left/right
 - HC-SR04 ultrasonic + 3-channel IR sensor fusion into occupancy grid
 - Dead-reckoning odometry for real-time pose estimation
+- **Visual odometry (ORB features)** — optional camera-based motion estimation (`--vo`)
 - Dual-window display: camera feed + top-down grid map
 - Auto-stop after a configurable timeout when no key is pressed
 - Headless, terminal keyboard, and command modes
@@ -281,6 +334,12 @@ python main.py --mode mock --command stop
 # Low-speed safety test
 python main.py --mode hardware --duty 1200 --max-runtime 30
 
+# Visual odometry (VO + dead reckoning)
+python main.py --vo
+
+# Pure visual odometry (replace dead reckoning)
+python main.py --vo --vo-no-dead-reckoning
+
 # Verbose logging
 python main.py --log-level DEBUG
 ```
@@ -326,6 +385,8 @@ Linux/macOS only (termios).
 --require-camera             Exit if camera init fails
 --duty 0-4096                Override motor duty cycle
 --max-runtime SECONDS        Auto-stop and exit after N seconds
+--vo                         Enable visual odometry (ORB feature matching)
+--vo-no-dead-reckoning       Pure VO mode (replace dead reckoning)
 --log-level DEBUG|INFO|...   Log level
 ```
 
@@ -353,6 +414,7 @@ manual_drive/
 ├── sensors.py             # HC-SR04 ultrasonic + 3-channel IR
 ├── camera.py              # PiCamera2 / USB camera manager
 ├── mapping.py             # Dead-reckoning + 2D occupancy grid
+├── visual_odometry.py     # Visual odometry (ORB feature matching)
 ├── terminal_keyboard.py   # Terminal keyboard input (SSH headless)
 ├── requirements.txt       # Cross-platform runtime deps
 ├── requirements-rpi.txt   # Raspberry Pi hardware deps
@@ -360,6 +422,48 @@ manual_drive/
 ├── pyproject.toml         # Ruff config
 └── tests/                 # Test suite
 ```
+
+### Visual Odometry
+
+Monocular visual odometry using ORB features to estimate car motion from consecutive camera frames.
+
+**How it works**
+1. Extract ORB features from two consecutive frames (max 1000 by default)
+2. Brute-force match with Hamming distance
+3. Estimate essential matrix via RANSAC and recover R, t with `recoverPose`
+4. t is a unit direction vector; scale is calibrated externally
+5. Project camera-frame motion into the world frame to update map pose
+
+**Confidence & fallback**
+- When the RANSAC inlier ratio falls below `VO_CONFIDENCE_THRESHOLD` (default 0.4), dead reckoning takes over
+- Pure VO mode (`--vo-no-dead-reckoning`): low-confidence frames are skipped
+
+**Scale calibration**
+- Initial scale `VO_SCALE = 1.0`
+- Auto-calibrated during forward motion using dead-reckoning speed estimate
+- `vo.calibrate_scale(actual_cm)` accepts external measurements
+
+**HUD display**
+Camera window bottom bar shows VO status:
+```
+VO:0.85 in:200 dZ:+2.3 Y:-1.2° s:1.52
+```
+- `VO:0.85` — confidence (0–1)
+- `in:200` — inlier count
+- `dZ:+2.3` — forward displacement (cm)
+- `Y:-1.2°` — yaw delta (degrees)
+- `s:1.52` — current scale
+
+**Configurable parameters (config.py)**
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `VO_FX` / `VO_FY` | 530 | Camera focal length (pixels, at 640×480) |
+| `VO_CX` / `VO_CY` | 320 / 240 | Principal point |
+| `VO_ORB_FEATURES` | 1000 | Max ORB features per frame |
+| `VO_MIN_MATCHES` | 30 | Minimum inliers to accept a frame |
+| `VO_FRAME_SKIP` | 0 | Process every N+1 frames (0 = all) |
+| `VO_SCALE` | 1.0 | Initial translation scale (cm / unit vector) |
+| `VO_CONFIDENCE_THRESHOLD` | 0.4 | Minimum confidence threshold |
 
 ### Verified Environment
 
@@ -410,7 +514,7 @@ manual_drive/
 
 ```bash
 # Syntax check
-python -m py_compile main.py config.py motor_control.py sensors.py camera.py mapping.py terminal_keyboard.py
+python -m py_compile main.py config.py motor_control.py sensors.py camera.py mapping.py visual_odometry.py terminal_keyboard.py
 
 # Lint
 ruff check .
