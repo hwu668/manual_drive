@@ -1,0 +1,8 @@
+# manual_drive — Minimal dependencies for keyboard-controlled driving + mapping
+# Install on Raspberry Pi 5:
+#   pip install -r requirements.txt
+#
+# For full RPi.GPIO support on Pi 5, use rpi-lgpio or the system python3-rpi.gpio package.
+
+opencv-python>=4.5
+numpy>=1.21
