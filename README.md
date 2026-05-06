@@ -27,6 +27,7 @@
 - 航位推算 (dead-reckoning) 实时估计小车位姿
 - **视觉里程计 (ORB 特征)** — 可选，利用摄像头图像估计帧间运动（`--vo`）
 - 双窗口显示：摄像头画面 + 俯视栅格地图
+- **MJPEG 流服务器** — 浏览器实时查看摄像头，绕过 VNC/X11 渲染问题
 - 松开按键超过指定时间后自动停车
 - 支持无头模式、终端键盘控制、命令式控制
 - 强制停车：前方障碍物距离小于阈值时自动停止
@@ -93,6 +94,9 @@ python main.py --vo
 # 纯视觉里程计（替换航位推算）
 python main.py --vo --vo-no-dead-reckoning
 
+# MJPEG 流 — 浏览器查看摄像头 (http://localhost:8080)
+python main.py --keyboard-terminal
+
 # 详细日志
 python main.py --log-level DEBUG
 ```
@@ -114,6 +118,19 @@ python main.py --mode hardware --no-display --keyboard-terminal
 
 仅支持 Linux/macOS（termios）。
 
+### MJPEG 摄像头流
+
+程序启动后自动在 `http://localhost:8080` 启动 MJPEG 流服务器，浏览器打开即可实时查看摄像头画面。
+**推荐在 VNC / 远程桌面环境下使用，因为 OpenCV Qt5 在 XWayland + wayvnc 下有渲染问题。**
+
+| URL | 说明 |
+|-----|------|
+| `http://localhost:8080` | MJPEG 实时流 + 状态页面 |
+| `http://localhost:8080/stream` | 纯 MJPEG 流 |
+| `http://localhost:8080/snapshot` | 单帧快照 |
+
+禁用: `--stream-port 0` / 自定义端口: `--stream-port 9090`
+
 ### GUI 模式键位
 
 | 按键 | 功能 |
@@ -132,6 +149,8 @@ python main.py --mode hardware --no-display --keyboard-terminal
 --mode auto|mock|hardware    运行模式（默认 auto）
 --no-display                 不打开 OpenCV 窗口
 --keyboard-terminal          终端键盘模式（SSH 友好）
+--no-terminal-keyboard       禁用终端键盘自动检测
+--stream-port PORT           MJPEG 流 HTTP 端口 (默认 8080, 0=禁用)
 --command stop|forward|...   执行单条命令后退出
 --duration SECONDS           命令持续时间（最大 1.0 秒）
 --no-camera                  跳过摄像头初始化
@@ -157,6 +176,15 @@ python main.py --mode hardware --command forward --duration 0.5
 
 确认 Ctrl+C 后会停车。确认超声波近距离停车逻辑有效。确认 `q` 退出后会停车。
 
+### 低光 / VNC 环境摄像头配置
+
+黑暗环境或 VNC 远程桌面下，摄像头画面可能过暗。调整 `config.py` 中的参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV 补偿 (-8 到 +8) |
+| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | 软件亮度增强倍数 (1.0 = 不变) |
+
 ### 项目结构
 
 ```
@@ -168,6 +196,7 @@ manual_drive/
 ├── camera.py              # PiCamera2 / USB 摄像头管理
 ├── mapping.py             # 航位推算 + 2D 占据栅格地图
 ├── visual_odometry.py     # 视觉里程计 (ORB 特征匹配)
+├── mjpeg_server.py        # MJPEG HTTP 流服务器 (浏览器查看摄像头)
 ├── terminal_keyboard.py   # 终端键盘输入 (SSH 无头控制)
 ├── requirements.txt       # 跨平台运行时依赖
 ├── requirements-rpi.txt   # 树莓派硬件依赖
@@ -274,6 +303,7 @@ A keyboard-controlled driving system for **Raspberry Pi 5 + Freenove FNK0043B (4
 - Dead-reckoning odometry for real-time pose estimation
 - **Visual odometry (ORB features)** — optional camera-based motion estimation (`--vo`)
 - Dual-window display: camera feed + top-down grid map
+- **MJPEG streaming server** — view camera in browser, bypasses VNC/X11 rendering issues
 - Auto-stop after a configurable timeout when no key is pressed
 - Headless, terminal keyboard, and command modes
 - Emergency stop when an obstacle is closer than the safety threshold
@@ -340,6 +370,9 @@ python main.py --vo
 # Pure visual odometry (replace dead reckoning)
 python main.py --vo --vo-no-dead-reckoning
 
+# MJPEG stream — view camera in browser (http://localhost:8080)
+python main.py --keyboard-terminal
+
 # Verbose logging
 python main.py --log-level DEBUG
 ```
@@ -361,6 +394,19 @@ python main.py --mode hardware --no-display --keyboard-terminal
 
 Linux/macOS only (termios).
 
+### MJPEG Camera Stream
+
+The program starts an MJPEG streaming server at `http://localhost:8080` automatically.
+**Recommended for VNC / remote desktop use — OpenCV Qt5 on XWayland + wayvnc has rendering issues.**
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8080` | MJPEG live stream + status page |
+| `http://localhost:8080/stream` | Raw MJPEG stream |
+| `http://localhost:8080/snapshot` | Single frame snapshot |
+
+Disable: `--stream-port 0` / Custom port: `--stream-port 9090`
+
 ### GUI Key Bindings
 
 | Key | Action |
@@ -379,6 +425,8 @@ Linux/macOS only (termios).
 --mode auto|mock|hardware    Runtime mode (default: auto)
 --no-display                 Disable OpenCV display windows
 --keyboard-terminal          Terminal keyboard mode (SSH friendly)
+--no-terminal-keyboard       Disable terminal keyboard auto-detection
+--stream-port PORT           MJPEG stream HTTP port (default 8080, 0=disable)
 --command stop|forward|...   Execute a single command and exit
 --duration SECONDS           Command duration (max 1.0s)
 --no-camera                  Skip camera initialization
@@ -404,6 +452,16 @@ python main.py --mode hardware --command forward --duration 0.5
 
 Verify Ctrl+C stops the car. Verify ultrasonic obstacle stop works. Verify `q` exit stops the car.
 
+### Low-Light / VNC Camera Configuration
+
+In dark environments or over VNC remote desktop, the camera feed may appear too dark.
+Adjust these settings in `config.py`:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV compensation (-8 to +8) |
+| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | Software brightness multiplier (1.0 = off) |
+
 ### Project Structure
 
 ```
@@ -415,6 +473,7 @@ manual_drive/
 ├── camera.py              # PiCamera2 / USB camera manager
 ├── mapping.py             # Dead-reckoning + 2D occupancy grid
 ├── visual_odometry.py     # Visual odometry (ORB feature matching)
+├── mjpeg_server.py        # MJPEG HTTP stream server (browser camera view)
 ├── terminal_keyboard.py   # Terminal keyboard input (SSH headless)
 ├── requirements.txt       # Cross-platform runtime deps
 ├── requirements-rpi.txt   # Raspberry Pi hardware deps
