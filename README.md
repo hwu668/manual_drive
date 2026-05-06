@@ -1,325 +1,107 @@
-# Manual Drive — Freenove FNK0043B 手动驾驶 + 实时建图
+# Manual Drive — Freenove FNK0043B
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform: Raspberry Pi 5](https://img.shields.io/badge/platform-Raspberry%20Pi%205-red.svg)](https://www.raspberrypi.com/products/raspberry-pi-5/)
+[![Hardware: Freenove FNK0043B](https://img.shields.io/badge/hardware-Freenove%20FNK0043B-orange.svg)](https://github.com/Freenove/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi)
 
 **Co-Contributors:** [hwu668](https://github.com/hwu668) · [DeepSeek](https://github.com/deepseek)
 
-[中文](#中文) | [English](#english)
+[English](#overview) | [中文](#概述)
 
 ---
 
-## 项目定位 | Project Positioning
+## Table of Contents
 
-本项目是 Raspberry Pi 5 + Freenove FNK0043B 小车的手动驾驶与简单 2D 地图演示项目。地图功能基于电机命令、时间估算、超声波和红外传感器进行简单更新，属于 **dead-reckoning occupancy grid demo**，不是完整 SLAM。
-
-由于没有轮速编码器、IMU 或闭环定位，位姿漂移是预期现象。地图适合教学、调试和演示，不应作为精确导航依据。
-
-> This is a manual driving + dead-reckoning 2D map demo, **not a full SLAM system**. No wheel encoders, no IMU, no loop closure. Pose drift is expected.
-
----
-
-## 中文
-
-### 简介
-
-基于 **树莓派 5 + Freenove FNK0043B (4WD 普通车轮)** 的键盘遥控驾驶系统，支持**实时 2D 占据栅格建图**。
-
-- 键盘 WASD 控制小车前进/后退/左转/右转
-- HC-SR04 超声波 + 3 路红外传感器融合进栅格地图
-- 航位推算 (dead-reckoning) 实时估计小车位姿
-- **视觉里程计 (ORB 特征)** — 可选，利用摄像头图像估计帧间运动（`--vo`）
-- 双窗口显示：摄像头画面 + 俯视栅格地图
-- **MJPEG 流服务器** — 浏览器实时查看摄像头，绕过 VNC/X11 渲染问题
-- 松开按键超过指定时间后自动停车
-- 支持无头模式、终端键盘控制、命令式控制
-- 强制停车：前方障碍物距离小于阈值时自动停止
-
-### 硬件要求
-
-| 组件 | 型号 |
-|------|------|
-| 主控 | Raspberry Pi 5 |
-| 小车底盘 | Freenove FNK0043B (4WD 普通车轮) |
-| 驱动板 | Smart Car Board (PCA9685 I2C) |
-| 超声波 | HC-SR04 |
-| 红外 | 3 通道循线模块 (前置向下) |
-| 摄像头 | Pi Camera 2 (CSI) 或 USB 摄像头 |
-
-### 安装
-
-```bash
-git clone https://github.com/hwu668/manual_drive.git
-cd manual_drive
-
-# 跨平台运行时依赖
-pip install -r requirements.txt
-
-# 树莓派硬件依赖（仅在 Pi 上需要）
-pip install -r requirements-rpi.txt
-
-# 开发工具（lint、测试）
-pip install -r requirements-dev.txt
-```
-
-### 运行模式
-
-支持三种运行模式：
-
-| 模式 | 说明 |
-|------|------|
-| `--mode auto` | 默认。优先尝试真实硬件，失败后降级 Mock。 |
-| `--mode mock` | 强制 Mock 模式，用于普通 PC 调试。 |
-| `--mode hardware` | 强制硬件模式。缺少硬件库或初始化失败时直接退出。 |
-
-### 使用
-
-```bash
-# 正常模式（摄像头 + 地图双窗口）
-python main.py
-
-# Mock 模式（普通 PC 调试，跳过摄像头）
-python main.py --mode mock --no-camera --max-runtime 3
-
-# 无头模式 + 终端键盘控制（SSH 可用）
-python main.py --mode hardware --no-display --keyboard-terminal
-
-# 命令式控制（SSH smoke test）
-python main.py --mode hardware --command forward --duration 0.5
-python main.py --mode mock --command stop
-
-# 低速安全测试
-python main.py --mode hardware --duty 1200 --max-runtime 30
-
-# 视觉里程计（VO + 航位推算并行）
-python main.py --vo
-
-# 纯视觉里程计（替换航位推算）
-python main.py --vo --vo-no-dead-reckoning
-
-# MJPEG 流 — 浏览器查看摄像头 (http://localhost:8080)
-python main.py --keyboard-terminal
-
-# 详细日志
-python main.py --log-level DEBUG
-```
-
-### Headless 键盘控制
-
-```bash
-python main.py --mode hardware --no-display --keyboard-terminal
-```
-
-| 按键 | 功能 |
-|------|------|
-| `w` | 前进 |
-| `s` | 后退 |
-| `a` | 左转 |
-| `d` | 右转 |
-| `空格` | 立即停车 |
-| `q` | 退出 |
-
-仅支持 Linux/macOS（termios）。
-
-### MJPEG 摄像头流
-
-程序启动后自动在 `http://localhost:8080` 启动 MJPEG 流服务器，浏览器打开即可实时查看摄像头画面。
-**推荐在 VNC / 远程桌面环境下使用，因为 OpenCV Qt5 在 XWayland + wayvnc 下有渲染问题。**
-
-| URL | 说明 |
-|-----|------|
-| `http://localhost:8080` | MJPEG 实时流 + 状态页面 |
-| `http://localhost:8080/stream` | 纯 MJPEG 流 |
-| `http://localhost:8080/snapshot` | 单帧快照 |
-
-禁用: `--stream-port 0` / 自定义端口: `--stream-port 9090`
-
-### GUI 模式键位
-
-| 按键 | 功能 |
-|------|------|
-| `W` | 前进 |
-| `S` | 后退 |
-| `A` | 左转 |
-| `D` | 右转 |
-| `空格` | 立即停车 |
-| `R` | 重置地图 |
-| `Q` | 退出 |
-
-### 命令行参数
-
-```
---mode auto|mock|hardware    运行模式（默认 auto）
---no-display                 不打开 OpenCV 窗口
---keyboard-terminal          终端键盘模式（SSH 友好）
---no-terminal-keyboard       禁用终端键盘自动检测
---stream-port PORT           MJPEG 流 HTTP 端口 (默认 8080, 0=禁用)
---command stop|forward|...   执行单条命令后退出
---duration SECONDS           命令持续时间（最大 1.0 秒）
---no-camera                  跳过摄像头初始化
---require-camera             摄像头失败则退出
---duty 0-4096                覆盖电机 duty 值
---max-runtime SECONDS        最大运行时间后自动退出
---vo                         启用视觉里程计 (ORB 特征匹配)
---vo-no-dead-reckoning       纯 VO 模式 (替换航位推算)
---log-level DEBUG|INFO|...   日志级别
-```
-
-### 实车安全建议
-
-首次实车测试建议：
-1. 把小车架空，确保轮子离地
-2. 使用低 duty / speed
-3. 先测试 `stop`
-4. 再测试短时间前进
-
-```bash
-python main.py --mode hardware --command forward --duration 0.5
-```
-
-确认 Ctrl+C 后会停车。确认超声波近距离停车逻辑有效。确认 `q` 退出后会停车。
-
-### 低光 / VNC 环境摄像头配置
-
-黑暗环境或 VNC 远程桌面下，摄像头画面可能过暗。调整 `config.py` 中的参数：
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV 补偿 (-8 到 +8) |
-| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | 软件亮度增强倍数 (1.0 = 不变) |
-
-### 项目结构
-
-```
-manual_drive/
-├── main.py                # 主程序入口
-├── config.py              # 所有参数配置
-├── motor_control.py       # PCA9685 电机驱动 (Mock 模式)
-├── sensors.py             # HC-SR04 超声波 + 3 通道红外
-├── camera.py              # PiCamera2 / USB 摄像头管理
-├── mapping.py             # 航位推算 + 2D 占据栅格地图
-├── visual_odometry.py     # 视觉里程计 (ORB 特征匹配)
-├── mjpeg_server.py        # MJPEG HTTP 流服务器 (浏览器查看摄像头)
-├── terminal_keyboard.py   # 终端键盘输入 (SSH 无头控制)
-├── requirements.txt       # 跨平台运行时依赖
-├── requirements-rpi.txt   # 树莓派硬件依赖
-├── requirements-dev.txt   # 开发工具 (pytest, ruff)
-├── pyproject.toml         # Ruff 配置
-└── tests/                 # 测试
-```
-
-### 视觉里程计 (Visual Odometry)
-
-基于 ORB 特征的单目视觉里程计，从连续摄像头帧中估计小车运动。
-
-**工作原理**
-1. 对前后两帧图像提取 ORB 特征点（默认最多 1000 个）
-2. 使用 Hamming 距离进行暴力匹配
-3. 通过 `findEssentialMat` + `recoverPose` 估计 R, t
-4. t 为方向向量（无尺度），通过 `calibrate_scale()` 校准为实际距离
-5. 将相机坐标系下的运动转换到世界坐标系，更新地图位姿
-
-**置信度与回退**
-- 当 RANSAC 内点比例低于 `VO_CONFIDENCE_THRESHOLD`（默认 0.4）时，自动回退到航位推算
-- 纯 VO 模式（`--vo-no-dead-reckoning`）：低置信度帧不更新位姿
-
-**尺度校准**
-- 初始尺度 `VO_SCALE = 1.0`
-- 前进时使用航位推算速度估算距离，自动校准尺度
-- 也可调用 `vo.calibrate_scale(actual_cm)` 使用外部测量值
-
-**HUD 显示**
-摄像头窗口底部 VO 状态行：
-```
-VO:0.85 in:200 dZ:+2.3 Y:-1.2° s:1.52
-```
-- `VO:0.85` — 置信度 (0–1)
-- `in:200` — 内点数
-- `dZ:+2.3` — 前向位移 (cm)
-- `Y:-1.2°` — 偏航角变化 (度)
-- `s:1.52` — 当前尺度
-
-**可调参数（config.py）**
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `VO_FX` / `VO_FY` | 530 | 相机焦距 (pixels, 640×480) |
-| `VO_CX` / `VO_CY` | 320 / 240 | 主点坐标 |
-| `VO_ORB_FEATURES` | 1000 | 每帧最多提取的 ORB 特征数 |
-| `VO_MIN_MATCHES` | 30 | 最少匹配内点数（低于此值忽略该帧） |
-| `VO_FRAME_SKIP` | 0 | 跳帧数（0 = 每帧都处理） |
-| `VO_SCALE` | 1.0 | 初始尺度 (cm / unit vector) |
-| `VO_CONFIDENCE_THRESHOLD` | 0.4 | 最小置信度阈值 |
-
-### 已验证环境
-
-| 项目 | 版本 / 状态 |
-|---|---|
-| Raspberry Pi | Raspberry Pi 5 |
-| OS | TODO |
-| Python | TODO |
-| Camera | TODO |
-| Freenove Kit | FNK0043B |
-| Freenove library | TODO |
-| I2C | TODO |
-| SPI | TODO |
-| SSH headless control | TODO |
-
-### 实车验证清单
-
-- [ ] 程序可以启动
-- [ ] Mock 模式可以运行
-- [ ] Hardware 模式可以识别硬件库
-- [ ] 电机 stop 正常
-- [ ] 小车可短时间前进
-- [ ] 小车可短时间后退
-- [ ] 小车可左转
-- [ ] 小车可右转
-- [ ] Ctrl+C 后小车停止
-- [ ] q 退出后小车停止
-- [ ] 空格急停有效
-- [ ] 超声波距离读数正常
-- [ ] 近距离障碍物触发强制停车
-- [ ] 红外传感器读数正常
-- [ ] 摄像头可以打开
-- [ ] no-camera 模式可以运行
-- [ ] no-display 模式行为符合 README 描述
-- [ ] 地图窗口可以显示
-- [ ] 无头模式日志正常
-
-### 更多文档
-
-- [Headless control](docs/headless-control.md)
-- [Hardware checklist](docs/hardware-checklist.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Mapping limitations](docs/mapping-limitations.md)
+- [Overview](#overview)
+- [Hardware](#hardware)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Runtime Modes](#runtime-modes)
+  - [Basic Commands](#basic-commands)
+  - [Headless Keyboard Control](#headless-keyboard-control)
+  - [MJPEG Camera Stream](#mjpeg-camera-stream)
+  - [GUI Key Bindings](#gui-key-bindings)
+  - [Full CLI Arguments](#full-cli-arguments)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Visual Odometry](#visual-odometry)
+- [Safety](#safety)
+- [Verified Environment](#verified-environment)
+- [Development](#development)
+- [License](#license)
 
 ---
 
-## English
+## Overview
 
-### Overview
+**Manual Drive** is a keyboard-controlled driving system for the **Raspberry Pi 5** and **Freenove FNK0043B** 4WD chassis, featuring real-time 2D occupancy grid mapping, optional monocular visual odometry, and a browser-based MJPEG camera stream.
 
-A keyboard-controlled driving system for **Raspberry Pi 5 + Freenove FNK0043B (4WD standard wheels)** with **real-time 2D occupancy grid mapping**.
+> ⚠️ **Important:** This is a **dead-reckoning occupancy grid demo**, not a full SLAM system. No wheel encoders, no IMU, no loop closure. Pose drift is expected. The map is suitable for teaching, debugging, and demonstration — not for precise navigation.
 
-- WASD keyboard control: forward, backward, turn left/right
-- HC-SR04 ultrasonic + 3-channel IR sensor fusion into occupancy grid
-- Dead-reckoning odometry for real-time pose estimation
-- **Visual odometry (ORB features)** — optional camera-based motion estimation (`--vo`)
-- Dual-window display: camera feed + top-down grid map
+### Key Features
+
+- **WASD keyboard control** — forward, backward, left/right turning
+- **Sensor fusion** — HC-SR04 ultrasonic + 3-channel IR integrated into occupancy grid
+- **Dead-reckoning odometry** — pose estimated from motor commands × elapsed time
+- **Visual odometry (optional)** — ORB feature-based monocular motion estimation (`--vo`)
+- **Dual-window display** — camera feed + top-down occupancy grid map
 - **MJPEG streaming server** — view camera in browser, bypasses VNC/X11 rendering issues
-- Auto-stop after a configurable timeout when no key is pressed
-- Headless, terminal keyboard, and command modes
-- Emergency stop when an obstacle is closer than the safety threshold
+- **Headless mode** — terminal keyboard control over SSH (`--keyboard-terminal`)
+- **Auto-stop** — automatic motor cut after configurable idle timeout
+- **Emergency stop** — obstacle within safety threshold triggers immediate stop
+- **Command mode** — execute single timed commands for CI/smoke testing
 
-### Hardware
+---
 
-| Component | Model |
-|-----------|-------|
-| Controller | Raspberry Pi 5 |
-| Chassis | Freenove FNK0043B (4WD standard wheels) |
-| Driver Board | Smart Car Board (PCA9685 I2C) |
-| Ultrasonic | HC-SR04 |
-| Infrared | 3-channel line tracking (front-facing, downward) |
-| Camera | Pi Camera 2 (CSI) or USB camera |
+## 概述
 
-### Installation
+**Manual Drive** 是基于 **Raspberry Pi 5 + Freenove FNK0043B** 4WD 底盘的键盘遥控驾驶系统，支持实时 2D 占据栅格建图、可选单目视觉里程计、以及基于浏览器的 MJPEG 摄像头流。
+
+> ⚠️ **注意：** 这是**航位推算占据栅格演示项目**，并非完整 SLAM 系统。无轮速编码器、无 IMU、无闭环定位，位姿漂移是预期现象。地图适合教学、调试和演示，不应作为精确导航依据。
+
+### 核心功能
+
+- **WASD 键盘遥控** — 前进/后退/左转/右转
+- **传感器融合** — HC-SR04 超声波 + 3 路红外数据融合进占据栅格
+- **航位推算** — 基于电机命令 × 时间的位姿估计
+- **视觉里程计（可选）** — 基于 ORB 特征的单目运动估计 (`--vo`)
+- **双窗口显示** — 摄像头画面 + 俯视占据栅格地图
+- **MJPEG 流服务器** — 浏览器查看摄像头，绕过 VNC/X11 渲染问题
+- **无头模式** — SSH 终端键盘控制 (`--keyboard-terminal`)
+- **自动停车** — 空闲超时后自动切断电机
+- **紧急停车** — 障碍物进入安全距离内触发强制停车
+- **命令模式** — 单次定时命令，适用于 CI/冒烟测试
+
+---
+
+## Hardware
+
+| Component | Model | Notes |
+|-----------|-------|-------|
+| Controller | Raspberry Pi 5 | BCM2712, 8 GB |
+| Chassis | Freenove FNK0043B | 4WD standard wheels (mecanum wheel version also supported) |
+| Driver Board | Smart Car Board | PCA9685 I2C PWM driver |
+| Ultrasonic | HC-SR04 | Range ~2–400 cm, GPIO 27 (Trig) / 22 (Echo) |
+| Infrared | 3-channel line tracking | Front-facing downward, GPIO 14/15/23 |
+| Camera | OV5647 (Pi Camera 2) | CSI interface, 640×480 @ 30 FPS |
+| Display Server | labwc (Wayland) + XWayland | Default on Raspberry Pi OS |
+
+### Hardware (中文)
+
+| 组件 | 型号 | 备注 |
+|------|------|------|
+| 主控 | Raspberry Pi 5 | BCM2712，8 GB |
+| 底盘 | Freenove FNK0043B | 4WD 标准车轮（也支持麦克纳姆轮版本） |
+| 驱动板 | Smart Car Board | PCA9685 I2C PWM 驱动 |
+| 超声波 | HC-SR04 | 量程 ~2–400 cm，GPIO 27 (Trig) / 22 (Echo) |
+| 红外 | 3 路循线模块 | 前置向下，GPIO 14/15/23 |
+| 摄像头 | OV5647 (Pi Camera 2) | CSI 接口，640×480 @ 30 FPS |
+| 显示服务 | labwc (Wayland) + XWayland | Raspberry Pi OS 默认 |
+
+---
+
+## Quick Start
 
 ```bash
 git clone https://github.com/hwu668/manual_drive.git
@@ -331,56 +113,112 @@ pip install -r requirements.txt
 # Raspberry Pi hardware dependencies (Pi only)
 pip install -r requirements-rpi.txt
 
-# Development tools (linting, testing)
+# Development tools (optional)
 pip install -r requirements-dev.txt
 ```
 
-### Runtime Modes
-
-Three modes are supported:
-
-| Mode | Description |
-|------|-------------|
-| `--mode auto` | Default. Try real hardware first, fall back to mock. |
-| `--mode mock` | Force emulated hardware for PC debugging. |
-| `--mode hardware` | Require real hardware. Exit on any failure. |
-
-### Usage
+## 快速开始
 
 ```bash
-# Normal mode (camera + map dual window)
+git clone https://github.com/hwu668/manual_drive.git
+cd manual_drive
+
+# 跨平台运行时依赖
+pip install -r requirements.txt
+
+# 树莓派硬件依赖
+pip install -r requirements-rpi.txt
+
+# 开发工具（可选）
+pip install -r requirements-dev.txt
+```
+
+---
+
+## Usage
+
+### Runtime Modes
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| Auto | `--mode auto` (default) | Try real hardware first, fall back to Mock |
+| Mock | `--mode mock` | Force emulated hardware — suitable for PC debugging, CI |
+| Hardware | `--mode hardware` | Require real hardware — exit on any init failure |
+
+### 运行模式
+
+| 模式 | 参数 | 行为 |
+|------|------|------|
+| 自动 | `--mode auto`（默认） | 优先尝试真实硬件，失败后降级 Mock |
+| 模拟 | `--mode mock` | 强制模拟硬件 — 适用于 PC 调试、CI |
+| 硬件 | `--mode hardware` | 强制真实硬件 — 初始化失败则退出 |
+
+### Basic Commands
+
+```bash
+# Normal mode — camera + map dual window
 python main.py
 
-# Mock mode (PC debugging, skip camera)
+# Mock mode for PC debugging
 python main.py --mode mock --no-camera --max-runtime 3
 
 # Headless + terminal keyboard (SSH)
 python main.py --mode hardware --no-display --keyboard-terminal
 
-# Command mode (SSH smoke test)
+# Single command smoke test
 python main.py --mode hardware --command forward --duration 0.5
-python main.py --mode mock --command stop
 
 # Low-speed safety test
 python main.py --mode hardware --duty 1200 --max-runtime 30
 
-# Visual odometry (VO + dead reckoning)
+# Enable visual odometry
 python main.py --vo
 
 # Pure visual odometry (replace dead reckoning)
 python main.py --vo --vo-no-dead-reckoning
 
-# MJPEG stream — view camera in browser (http://localhost:8080)
+# MJPEG camera stream — view at http://localhost:8080
 python main.py --keyboard-terminal
 
 # Verbose logging
 python main.py --log-level DEBUG
 ```
 
+### 基本命令
+
+```bash
+# 正常模式 — 摄像头 + 地图双窗口
+python main.py
+
+# 模拟模式用于 PC 调试
+python main.py --mode mock --no-camera --max-runtime 3
+
+# 无头 + 终端键盘控制（SSH）
+python main.py --mode hardware --no-display --keyboard-terminal
+
+# 单命令冒烟测试
+python main.py --mode hardware --command forward --duration 0.5
+
+# 低速安全测试
+python main.py --mode hardware --duty 1200 --max-runtime 30
+
+# 启用视觉里程计
+python main.py --vo
+
+# 纯视觉里程计（替换航位推算）
+python main.py --vo --vo-no-dead-reckoning
+
+# MJPEG 摄像头流 — 浏览器 http://localhost:8080 查看
+python main.py --keyboard-terminal
+
+# 详细日志
+python main.py --log-level DEBUG
+```
+
 ### Headless Keyboard Control
 
 ```bash
-python main.py --mode hardware --no-display --keyboard-terminal
+python main.py --mode hardware --keyboard-terminal
 ```
 
 | Key | Action |
@@ -392,22 +230,52 @@ python main.py --mode hardware --no-display --keyboard-terminal
 | `Space` | Emergency Stop |
 | `q` | Quit |
 
-Linux/macOS only (termios).
+> Requires Linux/macOS (termios). The program auto-detects SSH sessions and headless environments, enabling terminal keyboard mode automatically.
+
+### 无头键盘控制
+
+```bash
+python main.py --mode hardware --keyboard-terminal
+```
+
+| 按键 | 功能 |
+|------|------|
+| `w` | 前进 |
+| `s` | 后退 |
+| `a` | 左转 |
+| `d` | 右转 |
+| `空格` | 紧急停车 |
+| `q` | 退出 |
+
+> 需要 Linux/macOS（termios）。程序自动检测 SSH 会话和无显示器环境，自动启用终端键盘模式。
 
 ### MJPEG Camera Stream
 
-The program starts an MJPEG streaming server at `http://localhost:8080` automatically.
-**Recommended for VNC / remote desktop use — OpenCV Qt5 on XWayland + wayvnc has rendering issues.**
+The program starts an MJPEG streaming server at `http://localhost:8080` on launch. **Recommended for VNC / remote desktop** — OpenCV Qt5 on XWayland + wayvnc has known rendering issues.
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:8080` | MJPEG live stream + status page |
+| `http://localhost:8080` | Live stream + status page |
 | `http://localhost:8080/stream` | Raw MJPEG stream |
 | `http://localhost:8080/snapshot` | Single frame snapshot |
 
-Disable: `--stream-port 0` / Custom port: `--stream-port 9090`
+Disable with `--stream-port 0`. Custom port: `--stream-port 9090`.
+
+### MJPEG 摄像头流
+
+程序启动后自动在 `http://localhost:8080` 启动 MJPEG 流服务器。**推荐在 VNC / 远程桌面环境下使用** — OpenCV Qt5 在 XWayland + wayvnc 下有已知渲染问题。
+
+| URL | 说明 |
+|-----|------|
+| `http://localhost:8080` | 实时流 + 状态页面 |
+| `http://localhost:8080/stream` | 纯 MJPEG 流 |
+| `http://localhost:8080/snapshot` | 单帧快照 |
+
+禁用: `--stream-port 0`。自定义端口: `--stream-port 9090`。
 
 ### GUI Key Bindings
+
+When display windows are enabled:
 
 | Key | Action |
 |-----|--------|
@@ -419,14 +287,28 @@ Disable: `--stream-port 0` / Custom port: `--stream-port 9090`
 | `R` | Reset Map |
 | `Q` | Quit |
 
-### CLI Arguments
+### GUI 窗口键位
+
+显示窗口启用时：
+
+| 按键 | 功能 |
+|------|------|
+| `W` | 前进 |
+| `S` | 后退 |
+| `A` | 左转 |
+| `D` | 右转 |
+| `空格` | 紧急停车 |
+| `R` | 重置地图 |
+| `Q` | 退出 |
+
+### Full CLI Arguments
 
 ```
 --mode auto|mock|hardware    Runtime mode (default: auto)
---no-display                 Disable OpenCV display windows
+--no-display                 Disable OpenCV windows
 --keyboard-terminal          Terminal keyboard mode (SSH friendly)
 --no-terminal-keyboard       Disable terminal keyboard auto-detection
---stream-port PORT           MJPEG stream HTTP port (default 8080, 0=disable)
+--stream-port PORT           MJPEG stream HTTP port (default: 8080, 0 = disable)
 --command stop|forward|...   Execute a single command and exit
 --duration SECONDS           Command duration (max 1.0s)
 --no-camera                  Skip camera initialization
@@ -438,142 +320,276 @@ Disable: `--stream-port 0` / Custom port: `--stream-port 9090`
 --log-level DEBUG|INFO|...   Log level
 ```
 
-### Real-Car Safety
-
-Before the first real test:
-1. Lift the car so wheels are off the ground
-2. Use low duty / speed
-3. Test `stop` first
-4. Then test short forward movements
-
-```bash
-python main.py --mode hardware --command forward --duration 0.5
-```
-
-Verify Ctrl+C stops the car. Verify ultrasonic obstacle stop works. Verify `q` exit stops the car.
-
-### Low-Light / VNC Camera Configuration
-
-In dark environments or over VNC remote desktop, the camera feed may appear too dark.
-Adjust these settings in `config.py`:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV compensation (-8 to +8) |
-| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | Software brightness multiplier (1.0 = off) |
-
-### Project Structure
+### 全部命令行参数
 
 ```
-manual_drive/
-├── main.py                # Entry point
-├── config.py              # All configuration parameters
-├── motor_control.py       # PCA9685 motor driver (Mock supported)
-├── sensors.py             # HC-SR04 ultrasonic + 3-channel IR
-├── camera.py              # PiCamera2 / USB camera manager
-├── mapping.py             # Dead-reckoning + 2D occupancy grid
-├── visual_odometry.py     # Visual odometry (ORB feature matching)
-├── mjpeg_server.py        # MJPEG HTTP stream server (browser camera view)
-├── terminal_keyboard.py   # Terminal keyboard input (SSH headless)
-├── requirements.txt       # Cross-platform runtime deps
-├── requirements-rpi.txt   # Raspberry Pi hardware deps
-├── requirements-dev.txt   # Dev tools (pytest, ruff)
-├── pyproject.toml         # Ruff config
-└── tests/                 # Test suite
+--mode auto|mock|hardware    运行模式（默认 auto）
+--no-display                 不打开 OpenCV 窗口
+--keyboard-terminal          终端键盘模式（SSH 友好）
+--no-terminal-keyboard       禁用终端键盘自动检测
+--stream-port PORT           MJPEG 流 HTTP 端口（默认 8080，0=禁用）
+--command stop|forward|...   执行单条命令后退出
+--duration SECONDS           命令持续时间（最大 1.0s）
+--no-camera                  跳过摄像头初始化
+--require-camera             摄像头失败则退出
+--duty 0-4096                覆盖电机 duty 值
+--max-runtime SECONDS        最大运行时间后自动退出
+--vo                         启用视觉里程计 (ORB 特征匹配)
+--vo-no-dead-reckoning       纯 VO 模式（替换航位推算）
+--log-level DEBUG|INFO|...   日志级别
 ```
-
-### Visual Odometry
-
-Monocular visual odometry using ORB features to estimate car motion from consecutive camera frames.
-
-**How it works**
-1. Extract ORB features from two consecutive frames (max 1000 by default)
-2. Brute-force match with Hamming distance
-3. Estimate essential matrix via RANSAC and recover R, t with `recoverPose`
-4. t is a unit direction vector; scale is calibrated externally
-5. Project camera-frame motion into the world frame to update map pose
-
-**Confidence & fallback**
-- When the RANSAC inlier ratio falls below `VO_CONFIDENCE_THRESHOLD` (default 0.4), dead reckoning takes over
-- Pure VO mode (`--vo-no-dead-reckoning`): low-confidence frames are skipped
-
-**Scale calibration**
-- Initial scale `VO_SCALE = 1.0`
-- Auto-calibrated during forward motion using dead-reckoning speed estimate
-- `vo.calibrate_scale(actual_cm)` accepts external measurements
-
-**HUD display**
-Camera window bottom bar shows VO status:
-```
-VO:0.85 in:200 dZ:+2.3 Y:-1.2° s:1.52
-```
-- `VO:0.85` — confidence (0–1)
-- `in:200` — inlier count
-- `dZ:+2.3` — forward displacement (cm)
-- `Y:-1.2°` — yaw delta (degrees)
-- `s:1.52` — current scale
-
-**Configurable parameters (config.py)**
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `VO_FX` / `VO_FY` | 530 | Camera focal length (pixels, at 640×480) |
-| `VO_CX` / `VO_CY` | 320 / 240 | Principal point |
-| `VO_ORB_FEATURES` | 1000 | Max ORB features per frame |
-| `VO_MIN_MATCHES` | 30 | Minimum inliers to accept a frame |
-| `VO_FRAME_SKIP` | 0 | Process every N+1 frames (0 = all) |
-| `VO_SCALE` | 1.0 | Initial translation scale (cm / unit vector) |
-| `VO_CONFIDENCE_THRESHOLD` | 0.4 | Minimum confidence threshold |
-
-### Verified Environment
-
-| Item | Version / Status |
-|---|---|
-| Raspberry Pi | Raspberry Pi 5 |
-| OS | TODO |
-| Python | TODO |
-| Camera | TODO |
-| Freenove Kit | FNK0043B |
-| Freenove library | TODO |
-| I2C | TODO |
-| SPI | TODO |
-| SSH headless control | TODO |
-
-### Verification Checklist
-
-- [ ] Program starts
-- [ ] Mock mode runs
-- [ ] Hardware mode detects libraries
-- [ ] Motor stop works
-- [ ] Short forward works
-- [ ] Short backward works
-- [ ] Left turn works
-- [ ] Right turn works
-- [ ] Ctrl+C stops car
-- [ ] q exit stops car
-- [ ] Space emergency stop works
-- [ ] Ultrasonic readings valid
-- [ ] Close obstacle triggers safety stop
-- [ ] IR sensor readings valid
-- [ ] Camera opens
-- [ ] no-camera mode works
-- [ ] no-display behavior matches README
-- [ ] Map window displays
-- [ ] Headless logs correct
-
-### More Documentation
-
-- [Headless control](docs/headless-control.md)
-- [Hardware checklist](docs/hardware-checklist.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Mapping limitations](docs/mapping-limitations.md)
 
 ---
 
-## Development Checks
+## Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐
+│  Keyboard Input  │    │  Camera (CSI)   │
+│  terminal / GUI  │    │  PiCamera2/USB  │
+└────────┬─────────┘    └────────┬─────────┘
+         │ command               │ frame
+         ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  motor_control   │    │     camera      │    │    sensors      │
+│  PCA9685 PWM     │    │  capture/bright │    │  HC-SR04 + IR   │
+└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         main.py                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐  │
+│  │   mapping   │  │ visual_odo  │  │    mjpeg_server         │  │
+│  │ dead-reckon │  │ metry (opt) │  │  HTTP :8080 stream      │  │
+│  │ + grid map  │  │ ORB + R,t   │  │                         │  │
+│  └──────┬──────┘  └──────┬──────┘  └────────────┬────────────┘  │
+│         │                │                       │               │
+│         ▼                ▼                       ▼               │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │                     Display / Output                     │    │
+│  │   OpenCV windows (camera + map)  │  MJPEG browser stream │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Code Structure
+
+```
+manual_drive/
+├── main.py                # Entry point — loop, display, keyboard dispatch
+├── config.py              # All tunable parameters
+├── motor_control.py       # PCA9685 motor driver (mock fallback built-in)
+├── sensors.py             # HC-SR04 ultrasonic + 3-channel IR
+├── camera.py              # PiCamera2 CSI / USB camera manager
+├── mapping.py             # Dead-reckoning odometry + 2D occupancy grid
+├── visual_odometry.py     # Monocular visual odometry (ORB)
+├── mjpeg_server.py        # Lightweight MJPEG HTTP streaming server
+├── terminal_keyboard.py   # Non-blocking terminal keyboard (SSH headless)
+├── requirements.txt       # Cross-platform runtime dependencies
+├── requirements-rpi.txt   # Raspberry Pi hardware dependencies
+├── requirements-dev.txt   # Development tools (pytest, ruff)
+├── pyproject.toml         # Ruff configuration
+└── tests/                 # Unit tests
+```
+
+### 代码结构
+
+```
+manual_drive/
+├── main.py                # 主入口 — 循环、显示、键盘调度
+├── config.py              # 所有可调参数
+├── motor_control.py       # PCA9685 电机驱动（内置 mock 回退）
+├── sensors.py             # HC-SR04 超声波 + 3 路红外
+├── camera.py              # PiCamera2 CSI / USB 摄像头管理
+├── mapping.py             # 航位推算 + 2D 占据栅格地图
+├── visual_odometry.py     # 单目视觉里程计 (ORB)
+├── mjpeg_server.py        # 轻量 MJPEG HTTP 流服务器
+├── terminal_keyboard.py   # 非阻塞终端键盘（SSH 无头控制）
+├── requirements.txt       # 跨平台运行时依赖
+├── requirements-rpi.txt   # 树莓派硬件依赖
+├── requirements-dev.txt   # 开发工具 (pytest, ruff)
+├── pyproject.toml         # Ruff 配置
+└── tests/                 # 单元测试
+```
+
+---
+
+## Configuration
+
+All tunable parameters are centralized in `config.py`.
+
+| Category | Key Parameters |
+|----------|---------------|
+| Motor | `MOTOR_LEFT_FRONT_CH`, `MOTOR_LEFT_REAR_CH`, `MOTOR_RIGHT_FRONT_CH`, `MOTOR_RIGHT_REAR_CH`, `MOTOR_DUTY_FORWARD`, `MOTOR_DUTY_TURN`, `MOTOR_INVERT` |
+| Ultrasonic | `ULTRASONIC_TRIG_PIN` (27), `ULTRASONIC_ECHO_PIN` (22), `ULTRASONIC_TIMEOUT_US`, `ULTRASONIC_MAX_DISTANCE_CM` |
+| Infrared | `IR_LEFT_PIN` (14), `IR_MIDDLE_PIN` (15), `IR_RIGHT_PIN` (23) |
+| Camera | `CAMERA_WIDTH`, `CAMERA_HEIGHT`, `CAMERA_FPS`, `CAMERA_USE_PICAMERA2`, `CAMERA_EXPOSURE_VALUE`, `CAMERA_BRIGHTNESS_BOOST` |
+| Mapping | `MAP_RESOLUTION_CM`, `MAP_SIZE_CELLS`, `MAP_ORIGIN_CELL` |
+| Dead Reckoning | `SPEED_CM_PER_SEC`, `TURN_DEG_PER_SEC` |
+| Control | `AUTO_STOP_TIMEOUT_SEC`, `MAIN_LOOP_DELAY` |
+| Safety | `SAFE_STOP_DISTANCE_CM` |
+| Visual Odometry | `VO_FX`, `VO_FY`, `VO_CX`, `VO_CY`, `VO_ORB_FEATURES`, `VO_MIN_MATCHES`, `VO_CONFIDENCE_THRESHOLD`, `VO_SCALE` |
+
+### Low-Light / VNC Camera Tuning
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV compensation (-8 to +8). Higher values brighten dark scenes. |
+| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | Software brightness multiplier (1.0 = no change). Applied post-capture. |
+
+### 低光 / VNC 环境摄像头调节
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CAMERA_EXPOSURE_VALUE` | 4.0 | EV 补偿 (-8 ~ +8)。值越大画面越亮。 |
+| `CAMERA_BRIGHTNESS_BOOST` | 2.5 | 软件亮度增强倍数 (1.0 = 不变)。在捕获后应用。 |
+
+---
+
+## Visual Odometry
+
+Monocular visual odometry using ORB features to estimate inter-frame motion from consecutive camera frames.
+
+基于 ORB 特征的单目视觉里程计，从连续摄像头帧中估计帧间运动。
+
+### Pipeline
+
+1. **Feature extraction** — detect up to `VO_ORB_FEATURES` ORB keypoints per frame
+2. **Matching** — brute-force Hamming distance between consecutive frames
+3. **Pose recovery** — RANSAC essential matrix → `cv2.recoverPose` → rotation `R`, translation `t`
+4. **Scale calibration** — `t` is unit-norm; auto-calibrated using dead-reckoning speed during forward motion
+5. **World projection** — camera-frame motion transformed to world coordinates
+
+### 流水线
+
+1. **特征提取** — 每帧提取最多 `VO_ORB_FEATURES` 个 ORB 关键点
+2. **特征匹配** — 连续帧间暴力 Hamming 距离匹配
+3. **位姿恢复** — RANSAC 本质矩阵 → `cv2.recoverPose` → 旋转 `R`、平移 `t`
+4. **尺度校准** — `t` 为单位向量；前进时使用航位推算速度自动校准
+5. **世界投影** — 相机坐标系运动变换到世界坐标系
+
+### Confidence & Fallback / 置信度与回退
+
+- Inlier ratio < `VO_CONFIDENCE_THRESHOLD` (default 0.4) → fall back to dead reckoning
+- Pure VO mode (`--vo-no-dead-reckoning`): low-confidence frames are skipped entirely
+
+- 内点比例 < `VO_CONFIDENCE_THRESHOLD`（默认 0.4）→ 回退到航位推算
+- 纯 VO 模式（`--vo-no-dead-reckoning`）：低置信度帧直接跳过
+
+### HUD Status Line / HUD 状态行
+
+```
+VO:0.85 in:200 dZ:+2.3 Y:-1.2° s:1.52
+```
+
+| Field | Meaning |
+|-------|---------|
+| `VO:0.85` | Confidence (0–1) |
+| `in:200` | RANSAC inlier count |
+| `dZ:+2.3` | Forward displacement (cm) |
+| `Y:-1.2°` | Yaw delta (degrees) |
+| `s:1.52` | Current scale factor |
+
+| 字段 | 含义 |
+|------|------|
+| `VO:0.85` | 置信度 (0–1) |
+| `in:200` | RANSAC 内点数 |
+| `dZ:+2.3` | 前向位移 (cm) |
+| `Y:-1.2°` | 偏航角变化 (度) |
+| `s:1.52` | 当前尺度因子 |
+
+---
+
+## Safety
+
+### Before First Real Test / 首次实车测试前
+
+1. **Lift the car** — ensure wheels are off the ground / **架空小车** — 确保轮子离地
+2. **Use low duty** — `--duty 1200` or lower / **使用低 duty** — `--duty 1200` 或更低
+3. **Test `stop` first** — verify motors cut immediately / **先测试 `stop`** — 验证电机立即停止
+4. **Short forward test** — incremental duration / **短时间前进测试** — 逐步增加时长
+
+```bash
+# Step 1: Verify stop
+python main.py --mode hardware --command stop
+
+# Step 2: Short forward pulse
+python main.py --mode hardware --command forward --duration 0.3
+
+# Step 3: Incremental increase
+python main.py --mode hardware --command forward --duration 0.5
+
+# Step 4: Full test with safety limits
+python main.py --mode hardware --duty 1200 --max-runtime 30
+```
+
+### Safety Features / 安全功能
+
+| Feature | Trigger | Behavior |
+|---------|---------|----------|
+| Obstacle Stop | Object < `SAFE_STOP_DISTANCE_CM` (15 cm) | Immediate motor stop |
+| Auto-Stop | No key press > `AUTO_STOP_TIMEOUT_SEC` (0.4s) | Motors cut automatically |
+| Max Runtime | `--max-runtime` reached | Graceful shutdown |
+| Ctrl+C | SIGINT received | Stop motors → cleanup → exit |
+
+| 功能 | 触发条件 | 行为 |
+|------|----------|------|
+| 障碍物停车 | 物体 < `SAFE_STOP_DISTANCE_CM` (15 cm) | 立即停止电机 |
+| 自动停车 | 无按键 > `AUTO_STOP_TIMEOUT_SEC` (0.4s) | 自动切断电机 |
+| 最长运行 | `--max-runtime` 到达 | 优雅关闭 |
+| Ctrl+C | 收到 SIGINT | 停车 → 清理 → 退出 |
+
+---
+
+## Verified Environment
+
+| Item | Status |
+|------|--------|
+| Raspberry Pi | Raspberry Pi 5 (BCM2712) |
+| OS | Raspberry Pi OS (Debian 12 "Bookworm") |
+| Kernel | Linux 6.6 |
+| Python | 3.13 |
+| Display Server | labwc (Wayland) + XWayland |
+| Remote Desktop | Raspberry Pi Connect (wayvnc) |
+| Camera | OV5647 (Pi Camera 2) via CSI — **confirmed working** |
+| Camera Library | libcamera v0.6.0 + PiCamera2 |
+| OpenCV | Qt5 backend, XCB platform plugin |
+| Chassis | Freenove FNK0043B (standard wheels) |
+| Driver | PCA9685 I2C — **confirmed working** |
+| Ultrasonic | HC-SR04 — **confirmed working** |
+| IR Sensors | 3-channel line tracking — **confirmed working** |
+| Terminal Keyboard | termios — **confirmed working** |
+| MJPEG Stream | HTTP server on port 8080 — **confirmed working** |
+| VNC Camera Display | ⚠️ Known issue — OpenCV Qt5 on XWayland + wayvnc renders black. Use MJPEG stream as workaround. |
+
+### 已验证环境
+
+| 项目 | 状态 |
+|------|------|
+| 树莓派 | Raspberry Pi 5 (BCM2712) |
+| 操作系统 | Raspberry Pi OS (Debian 12 "Bookworm") |
+| 内核 | Linux 6.6 |
+| Python | 3.13 |
+| 显示服务 | labwc (Wayland) + XWayland |
+| 远程桌面 | Raspberry Pi Connect (wayvnc) |
+| 摄像头 | OV5647 (Pi Camera 2) via CSI — **已验证可用** |
+| 摄像头库 | libcamera v0.6.0 + PiCamera2 |
+| OpenCV | Qt5 后端，XCB 平台插件 |
+| 底盘 | Freenove FNK0043B（标准车轮） |
+| 驱动 | PCA9685 I2C — **已验证可用** |
+| 超声波 | HC-SR04 — **已验证可用** |
+| 红外传感器 | 3 路循线 — **已验证可用** |
+| 终端键盘 | termios — **已验证可用** |
+| MJPEG 流 | HTTP 服务器端口 8080 — **已验证可用** |
+| VNC 摄像头显示 | ⚠️ 已知问题 — OpenCV Qt5 在 XWayland + wayvnc 上渲染黑屏。替代方案：使用 MJPEG 流。 |
+
+---
+
+## Development
 
 ```bash
 # Syntax check
-python -m py_compile main.py config.py motor_control.py sensors.py camera.py mapping.py visual_odometry.py terminal_keyboard.py
+python -m py_compile main.py config.py motor_control.py sensors.py camera.py mapping.py visual_odometry.py terminal_keyboard.py mjpeg_server.py
 
 # Lint
 ruff check .
@@ -581,12 +597,20 @@ ruff check .
 # Format
 ruff format .
 
-# Tests
+# Run tests
 pytest
 ```
 
-Install dev dependencies:
+### Development Dependencies
 
 ```bash
 pip install -r requirements-dev.txt
 ```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE.txt).
+
+---
