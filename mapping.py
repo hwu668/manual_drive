@@ -148,10 +148,10 @@ class Mapping:
         """Return a BGR image of the current map for display."""
         # Color palette (BGR)
         colors = {
-            CELL_UNKNOWN: (60, 60, 60),     # dark grey
-            CELL_FREE: (220, 220, 220),     # light grey / white
-            CELL_OBSTACLE: (30, 30, 30),    # near black
-            CELL_IR_EDGE: (50, 50, 200),    # red
+            CELL_UNKNOWN: (140, 140, 140),   # mid grey (bright enough for VNC)
+            CELL_FREE: (230, 230, 230),      # near white
+            CELL_OBSTACLE: (60, 60, 60),     # dark grey
+            CELL_IR_EDGE: (50, 50, 255),     # bright red
         }
 
         img = np.zeros((self.size, self.size, 3), dtype=np.uint8)
@@ -176,8 +176,8 @@ class Mapping:
         cell_display = display_size / self.size
         for i in range(self.size):
             pos = int(i * cell_display)
-            cv2.line(img, (pos, 0), (pos, display_size), (80, 80, 80), 1)
-            cv2.line(img, (0, pos), (display_size, pos), (80, 80, 80), 1)
+            cv2.line(img, (pos, 0), (pos, display_size), (120, 120, 120), 1)
+            cv2.line(img, (0, pos), (display_size, pos), (120, 120, 120), 1)
 
         return img
 

@@ -126,6 +126,8 @@ class MotorControl:
         lr = max(-self.duty_max, min(self.duty_max, lr))
         rf = max(-self.duty_max, min(self.duty_max, rf))
         rr = max(-self.duty_max, min(self.duty_max, rr))
+        if self.config.MOTOR_INVERT:
+            lf, lr, rf, rr = -lf, -lr, -rf, -rr
         if self._motor is not None:
             try:
                 self._motor.setMotorModel(lf, lr, rf, rr)

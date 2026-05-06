@@ -26,6 +26,8 @@ class Camera:
         self.fps = config.CAMERA_FPS
         self.flip_h = config.CAMERA_FLIP_HORIZONTAL
         self.flip_v = config.CAMERA_FLIP_VERTICAL
+        self.exposure_value = getattr(config, 'CAMERA_EXPOSURE_VALUE', 2.0)
+        self.brightness_boost = getattr(config, 'CAMERA_BRIGHTNESS_BOOST', 1.8)
 
     def start(self) -> bool:
         if self.use_picamera2:
@@ -39,7 +41,10 @@ class Camera:
             self.picam2 = Picamera2()
             video_config = self.picam2.create_video_configuration(
                 main={"size": (self.width, self.height), "format": "RGB888"},
-                controls={"FrameRate": self.fps},
+                controls={
+                    "FrameRate": self.fps,
+                    "ExposureValue": self.exposure_value,
+                },
             )
             self.picam2.configure(video_config)
             self.picam2.start()
@@ -67,11 +72,14 @@ class Camera:
         return True
 
     def capture(self) -> np.ndarray | None:
+        frame = None
         if self.use_picamera2 and self.picam2 is not None:
-            return self._capture_picamera2()
-        if self.cap is not None:
-            return self._capture_usb()
-        return None
+            frame = self._capture_picamera2()
+        elif self.cap is not None:
+            frame = self._capture_usb()
+        if frame is not None and self.brightness_boost != 1.0:
+            frame = cv2.convertScaleAbs(frame, alpha=self.brightness_boost, beta=0)
+        return frame
 
     def _capture_picamera2(self) -> np.ndarray | None:
         try:

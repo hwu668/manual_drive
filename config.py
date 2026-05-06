@@ -26,21 +26,22 @@ MOTOR_DUTY_MAX = 4096
 MOTOR_DUTY_FORWARD = 2000   # base forward speed
 MOTOR_DUTY_TURN = 2000      # turning speed
 MOTOR_DUTY_SLOW = 1200      # slow / precise
+MOTOR_INVERT = True          # invert all motor directions (swap fwd↔back, left↔right)
 
 # ============================================================================
 # Ultrasonic (HC-SR04)
 # ============================================================================
-ULTRASONIC_TRIG_PIN = 23
-ULTRASONIC_ECHO_PIN = 24
+ULTRASONIC_TRIG_PIN = 27          # Freenove board: TRIG = GPIO 27
+ULTRASONIC_ECHO_PIN = 22          # Freenove board: ECHO = GPIO 22
 ULTRASONIC_TIMEOUT_US = 40000
 ULTRASONIC_MAX_DISTANCE_CM = 200
 
 # ============================================================================
 # Infrared line tracking (3-channel, downward-facing at front bumper)
 # ============================================================================
-IR_LEFT_PIN = 17
-IR_MIDDLE_PIN = 27
-IR_RIGHT_PIN = 22
+IR_LEFT_PIN = 14                  # Freenove board: left IR = GPIO 14
+IR_MIDDLE_PIN = 15                # Freenove board: middle IR = GPIO 15
+IR_RIGHT_PIN = 23                 # Freenove board: right IR = GPIO 23
 
 # ============================================================================
 # Camera
@@ -51,6 +52,8 @@ CAMERA_FPS = 30
 CAMERA_USE_PICAMERA2 = True   # True = CSI camera; False = USB
 CAMERA_FLIP_HORIZONTAL = False
 CAMERA_FLIP_VERTICAL = False
+CAMERA_EXPOSURE_VALUE = 4.0   # EV compensation for low-light (0=auto, range -8 to +8)
+CAMERA_BRIGHTNESS_BOOST = 2.5 # Software brightness multiplier (1.0 = no change)
 
 # ============================================================================
 # Mapping

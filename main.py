@@ -12,9 +12,14 @@ Usage:
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
+
+# Force Qt X11 backend on Wayland — OpenCV's Qt5 lacks the wayland plugin
+if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 import cv2
 import numpy as np
@@ -24,6 +29,7 @@ from camera import Camera
 from mapping import Mapping
 from motor_control import MotorControl
 from sensors import Sensors
+from mjpeg_server import MjpegServer
 from terminal_keyboard import TerminalKeyboard
 from visual_odometry import VisualOdometry
 
@@ -38,7 +44,8 @@ class ManualDrive:
                  command: str = None, duration: float = None,
                  no_camera: bool = False, require_camera: bool = False,
                  duty: int = None, max_runtime: float = None,
-                 use_vo: bool = False, vo_no_dead_reckoning: bool = False):
+                 use_vo: bool = False, vo_no_dead_reckoning: bool = False,
+                 stream_port: int = 8080, no_stream: bool = False):
         self.no_display = no_display
         self.mode = mode
         self._use_terminal_kb = use_terminal_kb
@@ -49,6 +56,8 @@ class ManualDrive:
         self._max_runtime = max_runtime
         self._use_vo = use_vo
         self._vo_no_dr = vo_no_dead_reckoning
+        self._stream_port = stream_port
+        self._no_stream = no_stream
 
         # Apply duty override if provided
         if duty is not None:
@@ -66,6 +75,7 @@ class ManualDrive:
         self.sensors = Sensors(config)
         self.mapping = Mapping(config)
         self._terminal_kb = None
+        self._mjpeg_server: MjpegServer | None = None
 
         # Visual odometry (optional)
         self.vo: VisualOdometry | None = None
@@ -112,14 +122,26 @@ class ManualDrive:
             logger.error("Sensor init failed (mode=%s)", self.mode)
             sys.exit(1)
 
+        # MJPEG streaming server (browser-based camera view)
+        if not self._no_stream and not self._no_camera:
+            try:
+                self._mjpeg_server = MjpegServer(self.camera, port=self._stream_port)
+                self._mjpeg_server.start()
+            except Exception as e:
+                logger.warning("MJPEG server failed to start: %s", e)
+                self._mjpeg_server = None
+
         # Terminal keyboard
         if self._use_terminal_kb:
             try:
                 self._terminal_kb = TerminalKeyboard()
                 self._terminal_kb.start()
-            except ImportError as e:
-                logger.error("Terminal keyboard not available: %s", e)
-                sys.exit(1)
+            except Exception as e:
+                logger.warning("Terminal keyboard not available: %s", e)
+                logger.warning("Falling back to %s",
+                               "OpenCV window keyboard" if not self.no_display else "headless mode")
+                self._use_terminal_kb = False
+                self._terminal_kb = None
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -174,6 +196,12 @@ class ManualDrive:
             except Exception:
                 pass
 
+        if self._mjpeg_server is not None:
+            try:
+                self._mjpeg_server.stop()
+            except Exception:
+                pass
+
         cv2.destroyAllWindows()
         logger.info("Manual Drive stopped.")
 
@@ -197,6 +225,9 @@ class ManualDrive:
             frame = None
             if not self._no_camera:
                 frame = self.camera.capture()
+                # Push to MJPEG stream server (if active)
+                if self._mjpeg_server is not None and frame is not None:
+                    self._mjpeg_server.update_frame(frame)
 
             # 2. Read sensors
             distance_cm = self.sensors.get_distance_cm()
@@ -258,16 +289,8 @@ class ManualDrive:
             # 6b. Sensor fusion into occupancy grid
             self.mapping.update_map(distance_cm, ir_data)
 
-            # 7. Display + input
-            if self._terminal_kb is not None:
-                # Terminal keyboard mode (SSH friendly)
-                key_char = self._terminal_kb.read_key(timeout=0.02)
-                if key_char is not None:
-                    self._handle_terminal_key(key_char)
-                if self._fps_counter % 50 == 0:
-                    logger.debug("Terminal tick %d | cmd=%s dist=%.1f cm",
-                                 self._fps_counter, self._command, distance_cm)
-            elif not self.no_display:
+            # 7. Display (camera + map windows) — now shown even with terminal keyboard
+            if not self.no_display:
                 # Camera window
                 if frame is not None:
                     display_frame = self._draw_camera_hud(frame, distance_cm, ir_data)
@@ -283,7 +306,20 @@ class ManualDrive:
                 map_img = self.mapping.render()
                 cv2.imshow(config.WINDOW_MAP, map_img)
 
-                # Keyboard input
+                # cv2.waitKey is required to refresh windows (even when using terminal kb)
+                cv2.waitKey(1)
+
+            # 7b. Keyboard input
+            if self._terminal_kb is not None:
+                # Terminal keyboard mode (SSH friendly)
+                key_char = self._terminal_kb.read_key(timeout=0.02)
+                if key_char is not None:
+                    self._handle_terminal_key(key_char)
+                if self._fps_counter % 50 == 0:
+                    logger.debug("Terminal tick %d | cmd=%s dist=%.1f cm",
+                                 self._fps_counter, self._command, distance_cm)
+            elif not self.no_display:
+                # OpenCV window keyboard input (only when no terminal kb)
                 key = cv2.waitKey(1) & 0xFF
                 self._handle_key(key)
             else:
@@ -455,7 +491,9 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py                    # normal mode with camera + map display
+  python main.py                    # auto-detect + MJPEG stream at http://localhost:8080
+  python main.py --keyboard-terminal  # force terminal keyboard + camera windows
+  python main.py --stream-port 0    # disable MJPEG stream
   python main.py --no-display       # headless mode (SSH, logging only)
   python main.py --log-level DEBUG  # verbose logging
         """,
@@ -471,6 +509,8 @@ Examples:
                         help="Logging level (default: INFO)")
     parser.add_argument("--keyboard-terminal", action="store_true",
                         help="Use terminal keyboard input (SSH friendly, Linux/macOS only)")
+    parser.add_argument("--no-terminal-keyboard", action="store_true",
+                        help="Disable auto-detection of terminal keyboard mode")
     parser.add_argument("--command", type=str, default=None,
                         choices=["stop", "forward", "backward", "left", "right"],
                         help="Execute a single command and exit (for CI/SSH smoke tests)")
@@ -488,6 +528,8 @@ Examples:
                         help="Enable visual odometry (ORB feature-based motion estimate)")
     parser.add_argument("--vo-no-dead-reckoning", action="store_true",
                         help="Replace dead reckoning with VO (default: augment)")
+    parser.add_argument("--stream-port", type=int, default=8080,
+                        help="MJPEG stream HTTP port (default: 8080, 0 = disable)")
     return parser.parse_args()
 
 
@@ -529,10 +571,22 @@ if __name__ == "__main__":
         ],
     )
 
+    # Auto-detect terminal keyboard mode
+    use_terminal_kb = args.keyboard_terminal
+    if not use_terminal_kb and not args.no_terminal_keyboard and not args.no_display:
+        # Auto-enable terminal keyboard when no X11/Wayland display
+        # or when running over SSH
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            use_terminal_kb = True
+            _cli_logger.info("No display detected, auto-enabling --keyboard-terminal")
+        elif os.environ.get("SSH_TTY") or os.environ.get("SSH_CONNECTION"):
+            use_terminal_kb = True
+            _cli_logger.info("SSH session detected, auto-enabling --keyboard-terminal")
+
     drive = ManualDrive(
         no_display=args.no_display,
         mode=args.mode,
-        use_terminal_kb=args.keyboard_terminal,
+        use_terminal_kb=use_terminal_kb,
         command=args.command,
         duration=duration,
         no_camera=args.no_camera,
@@ -541,5 +595,7 @@ if __name__ == "__main__":
         max_runtime=args.max_runtime,
         use_vo=args.vo,
         vo_no_dead_reckoning=args.vo_no_dead_reckoning,
+        stream_port=args.stream_port,
+        no_stream=(args.stream_port == 0),
     )
     drive.start()
